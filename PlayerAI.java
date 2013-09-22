@@ -1,4 +1,3 @@
-
 import static com.orbischallenge.bombman.api.game.MapItems.*;
 import com.orbischallenge.bombman.api.game.MapItems;
 import com.orbischallenge.bombman.api.game.PlayerAction;
@@ -19,11 +18,12 @@ public class PlayerAI implements Player {
     public static final int BOMB_V = 9;
     public static final int WALL_V = 1;
     public static final int BLANK_V = 0;
-    public static final int BLOCK_V = -3;
+    //public static final int BLOCK_V = -3;
     private MapItems[][] map = new MapItems[16][16];
     List<Point> allBlocks;
+    LinkedList<Move.Direction> movesSequence;
     int[][] heightMap = new int[17][17];
-    private Point goalPoint;
+
     /**
      * Gets called every time a new game starts.
      *
@@ -35,6 +35,7 @@ public class PlayerAI implements Player {
     @Override
     public void newGame(MapItems[][] map, List<Point> blocks, Bomber[] players, int playerIndex) {
         allBlocks = blocks;
+        movesSequence = new LinkedList<>();
         String temp="";
         for (int i = 1; i < 16; i++) {
             for (int j = 1; j < 16; j++) {
@@ -76,6 +77,12 @@ public class PlayerAI implements Player {
 
         this.map = map;
 
+        /*for (Point p : allBlocks) {
+            updateHeightMapBlocks(p);
+        }*/
+
+        updateHeightMapPlayers(players[1-playerIndex].position);
+
         for (Map.Entry entry : bombLocations.entrySet()) { 
             Point point = (Point) entry.getKey();
             Bomb bomb = (Bomb) entry.getValue();
@@ -83,15 +90,12 @@ public class PlayerAI implements Player {
         }
 
         for(Point p: explosionLocations) {
+            updateHeightMapExplosions(p);
             if (allBlocks.contains(p)) {
                 allBlocks.remove(p);
             }
-            updateHeightMapExplosions(p);
         }
 
-        for (Point p : allBlocks) {
-            updateHeightMapBlocks(p);
-        }
         String temp="";
         for (int i = 1; i < 16; i++) {
             for (int j = 1; j < 16; j++) {
@@ -100,16 +104,12 @@ public class PlayerAI implements Player {
             System.out.println(temp);
             temp = "";
         }
-
         boolean bombMove = false;
         /**
          * Get Bomber's current position
          */
         Point curPosition = players[playerIndex].position;
-        LinkedList<Point> path = findGoal(curPosition, map);
-        int minScore = 100;
-        int minX = 100;
-        int minY = 100;
+        int minScore = 100; /*heightMap[curPosition.x][curPosition.y];*/
         Move.Direction bestMove = new Move.Direction(0, 0, PlayerAction.STAYPUT, PlayerAction.PLACEBOMB);
 
         /**
@@ -123,28 +123,32 @@ public class PlayerAI implements Player {
             int y = curPosition.y + move.dy;
 
             if (map[x][y].isWalkable()) {
+                validMoves.add(move);
                 // TODO: hardcoded 14.
-                if(!path.isEmpty()) {
-                    Point suggested = path.pop();
-                    if(x == suggested.x && y == suggested.y) {
+                if (heightMap[x][y] < 14){
+                    if(minScore > heightMap[x][y]) {
+                        minScore = heightMap[x][y];
                         bestMove = move;
-                        System.out.println("BestMove = " + suggested);
-                    } else if (heightMap[x][y] < 14){
-                        if(minScore > heightMap[x][y]) {
-                            minScore = heightMap[x][y];
-                            bestMove = move;
-                        }
-                        validMoves.add(move);
-                        if(heightMap[curPosition.x][curPosition.y] == -3) {
-                            bombMove = true;
-                        }
                     }
+                    if(heightMap[curPosition.x][curPosition.y] == -3) {
+                        bombMove = true;
+                    }
+                } else {
+                    bestMove = validMoves.get((int) (Math.random() * validMoves.size()));
                 }
             }
             if (allBlocks.contains(new Point(x, y))) {
                 blocks.add(move);
             }
         }
+
+        /**
+         * If there are blocks around, I should place a bomb in my current square.
+         */
+        if (!blocks.isEmpty()) {
+            bombMove = true;
+        }
+
         /**
          * There's no place to go, I'm stuck. :(
          */
@@ -153,9 +157,6 @@ public class PlayerAI implements Player {
             return Move.still.action;
         }
 
-        for(Point p: explosionLocations) {
-            cleanBomb(p);
-        }
         /**
          * If I've got moves stored in movesSequence, use the oldest one in there (index 0). 
          * Else pick the first validMove available lol
@@ -164,37 +165,18 @@ public class PlayerAI implements Player {
         /*if (bombMove) {
             return bestMove.bombaction;
         }*/
+
+        for(Point p: explosionLocations) {
+            cleanBomb(p);
+        }
+
+        cleanPlayer(players[1-playerIndex].position);
         System.out.println(bestMove.action); 
         return bestMove.action;
 
     }
 
-    private boolean hasGetAway(Point p) {
-        int x = p.x;
-        int y = p.y;
-        if(map[x][y].isWalkable()) {
-            if(map[x-1][y].isWalkable() && heightMap[x-1][y] <= 0) {
-                return true;
-            }
-            if(map[x+1][y].isWalkable() && heightMap[x+1][y] <= 0) {
-                return true;
-            }
-            if(map[x][y-1].isWalkable() &&heightMap[x][y-1] <= 0) {
-                return true;
-            }
-            if(map[x][y+1].isWalkable() &&heightMap[x][y+1] <= 0) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void updateHeightMapExplosions(Point p) {
-        int x = p.x;
-        int y = p.y;
-        heightMap[x][y] = 50;
-    }
-    private void updateHeightMapBlocks(Point p) {
+    /*private void updateHeightMapBlocks(Point p) {
         int x = p.x;
         int y = p.y;
         if(map[x-1][y].isWalkable()) {
@@ -209,6 +191,43 @@ public class PlayerAI implements Player {
         if(map[x][y+1].isWalkable()) {
             heightMap[x][y+1] = BLOCK_V;
         }
+    }*/
+    private void updateHeightMapPlayers(Point p) {
+        int x = p.x;
+        int y = p.y;
+        int range = 3;
+        int score = 5;
+        System.out.println("score " + score); 
+        // Increase score of bomb coord. 
+        heightMap[x][y] = score;
+        for(int i = 1; i < range + 1; i++) {
+            if(map[x-i][y].isWalkable() && heightMap[x-i][y] <= score-i) {
+                heightMap[x-i][y] = score - i;
+            } else {
+                break;
+            }
+        }
+        for(int i = 1; i < range + 1; i++) {
+            if(map[x+i][y].isWalkable() && heightMap[x+i][y] <= score-i) {
+                heightMap[x+i][y] = score - i;
+            } else {
+                break;
+            }
+        }
+        for(int i = 1; i < range + 1; i++) {
+            if(map[x][y-i].isWalkable() && heightMap[x][y-i] <= score-i) {
+                heightMap[x][y-i] = score - i;
+            } else {
+                break;
+            }
+        }
+        for(int i = 1; i < range + 1; i++) {
+            if(map[x][y+i].isWalkable() && heightMap[x][y+i] <= score-i) {
+                heightMap[x][y+i] = score - i;
+            } else {
+                break;
+            }
+        }
     }
     private void updateHeightMapBombs(Point p, Bomb bomb) {
         int x = p.x;
@@ -219,37 +238,74 @@ public class PlayerAI implements Player {
         // Increase score of bomb coord. 
         heightMap[x][y] = score;
         for(int i = 1; i < bomb.getRange() + 1; i++) {
-            if(map[x-i][y].isWalkable()) {
-                heightMap[x-i][y] = score;
+            if(map[x-i][y].isWalkable() && heightMap[x-i][y] == score-i-1) {
+                heightMap[x-i][y] = score - i;
             } else {
                 break;
             }
         }
         for(int i = 1; i < bomb.getRange() + 1; i++) {
-            if(map[x+i][y].isWalkable()) {
-                heightMap[x+i][y] = score;
+            if(map[x+i][y].isWalkable() && heightMap[x+i][y] == score-i-1) {
+                heightMap[x+i][y] = score - i;
             } else {
                 break;
             }
         }
         for(int i = 1; i < bomb.getRange() + 1; i++) {
-            if(map[x][y-i].isWalkable()) {
-                heightMap[x][y-i] = score;
+            if(map[x][y-i].isWalkable() && heightMap[x][y-i] == score-i-1) {
+                heightMap[x][y-i] = score - i;
             } else {
                 break;
             }
         }
         for(int i = 1; i < bomb.getRange() + 1; i++) {
-            if(map[x][y+i].isWalkable()) {
-                heightMap[x][y+i] = score;
+            if(map[x][y+i].isWalkable() && heightMap[x][y+i] == score-i-1) {
+                heightMap[x][y+i] = score - i;
             } else {
                 break;
             }
         }
     }
 
+    private void updateHeightMapExplosions(Point p) {
+        heightMap[p.x][p.y] = 20;
+    }
     private void cleanBomb(Point p) {
         heightMap[p.x][p.y] = BLANK_V;
+    }
+    private void cleanPlayer(Point p) {
+        int x = p.x;
+        int y = p.y;
+        int range = 3;
+        int score = 10;
+        for(int i = 1; i < range + 1; i++) {
+            if(map[x-i][y].isWalkable()) {
+                heightMap[x-i][y] = BLANK_V;
+            } else {
+                break;
+            }
+        }
+        for(int i = 1; i < range + 1; i++) {
+            if(map[x+i][y].isWalkable()) {
+                heightMap[x+i][y] = BLANK_V;
+            } else {
+                break;
+            }
+        }
+        for(int i = 1; i < range + 1; i++) {
+            if(map[x][y-i].isWalkable()) {
+                heightMap[x][y-i] = BLANK_V;
+            } else {
+                break;
+            }
+        }
+        for(int i = 1; i < range + 1; i++) {
+            if(map[x][y+i].isWalkable()) {
+                heightMap[x][y+i] = BLANK_V;
+            } else {
+                break;
+            }
+        }
     }
 
     /**
@@ -263,31 +319,27 @@ public class PlayerAI implements Player {
      * @param map The map use to check if a path exists between point A and point B
      * @return True if there is a walkable path between point A and point B, False otherwise.
      */
-    public LinkedList<Point> findGoal(Point start, MapItems[][] map) {
+    public boolean isThereAPath(Point start, Point end, MapItems[][] map) {
         //Keeps track of points we have to check
-        Queue<Node> open = new LinkedList<>();
+        Queue<Point> open = new LinkedList<>();
 
         //Keeps track of points we have already visited
-        LinkedList<Node> visited = new LinkedList<>();
+        List<Point> visited = new LinkedList<>();
 
-        LinkedList<Point> path = new LinkedList<>();
-        path.add(start);
-        open.add(new Node(null, start));
-        Node neighbour = new Node(null, start);
-        lala:
+        open.add(start);
         while (!open.isEmpty()) {
-            Node curNode = open.remove();
+            Point curPoint = open.remove();
 
             //Check all the neighbours of the current point in question
             for (Move.Direction direction : Move.getAllMovingMoves()) {
-                int x = curNode.getPoint().x + direction.dx;
-                int y = curNode.getPoint().y + direction.dy;
+                int x = curPoint.x + direction.dx;
+                int y = curPoint.y + direction.dy;
 
-                neighbour = new Node(curNode, new Point (x, y));
+                Point neighbour = new Point(x, y);
 
                 // if the point is the destination, we are done
-                if (map[neighbour.getPoint().x][neighbour.getPoint().y].isWalkable() && heightMap[neighbour.getPoint().x][neighbour.getPoint().y] <= -3) {
-                    break lala;
+                if (end.equals(neighbour)) {
+                    return true;
                 }
 
                 // if we have already visited this point, we skip it
@@ -304,36 +356,9 @@ public class PlayerAI implements Player {
                 visited.add(neighbour);
             }
         }
-        if(!visited.isEmpty()) {
-            while (neighbour.getParent() != null) {
-                path.add(neighbour.getPoint());
-                System.out.println("Path " + neighbour.getPoint()); 
-                neighbour = neighbour.getParent();
-    /*            visited.pop();*/
-                
-            } 
-        }
-
-        return path;
+        return false;
     }
 
-    public class Node {
-        private Node mParent;
-        private Point mPoint;
-        public Node (Node parent, Point p) {
-            mParent = parent;
-            mPoint = p;
-        }
-
-        public Node getParent() {
-            return mParent;
-        }
-
-        public Point getPoint() {
-            return mPoint;
-        }
-
-    }
     /**
      * Returns the Manhattan Distance between the two points.
      *
