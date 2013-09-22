@@ -19,6 +19,7 @@ public class PlayerAI implements Player {
     public static final int BOMB_V = 9;
     public static final int WALL_V = 1;
     public static final int BLANK_V = 0;
+    public static final int BLOCK_V = -3;
     private MapItems[][] map = new MapItems[16][16];
     List<Point> allBlocks;
     LinkedList<Move.Direction> movesSequence;
@@ -76,39 +77,26 @@ public class PlayerAI implements Player {
     public PlayerAction getMove(MapItems[][] map, HashMap<Point, Bomb> bombLocations, HashMap<Point, PowerUps> powerUpLocations, Bomber[] players, List<Point> explosionLocations, int playerIndex, int moveNumber) {
 
         this.map = map;
+
+        for (Point p : allBlocks) {
+            updateHeightMapBlocks(p);
+        }
         for (Map.Entry entry : bombLocations.entrySet()) { 
             Point point = (Point) entry.getKey();
             Bomb bomb = (Bomb) entry.getValue();
             updateHeightMapBombs(point, bomb);
-            System.out.println("key,val: " + entry.getKey() + "," + entry.getValue()); 
         }
 
         for(Point p: explosionLocations) {
             cleanBomb(p);
+            if (allBlocks.contains(p)) {
+                allBlocks.remove(p);
+            }
         }
 
         String temp="";
         for (int i = 1; i < 16; i++) {
             for (int j = 1; j < 16; j++) {
-                /*switch(heightMap[i][j]){
-                    case BOMB_V:
-                        if(map[i][j] != BOMB) {
-                            heightMap[i][j] = BLANK_V;
-                            heightMap[i-1][j] = BLANK_V;
-                            heightMap[i][j-1] = BLANK_V;
-                            heightMap[i+1][j] = BLANK_V;
-                            heightMap[i][j+1] = BLANK_V;
-                        }
-                        break;
-                }
-                switch(map[i][j]){
-                    case BOMB: 
-                        heightMap[i][j] = BOMB_V;
-                        heightMap[i-1][j] = BOMB_V - 1;
-                        heightMap[i][j-1] = BOMB_V - 1;
-                        heightMap[i+1][j] = BOMB_V - 1;
-                        heightMap[i][j+1] = BOMB_V - 1;
-                }*/
                 temp += String.valueOf(heightMap[j][i] + "  ");
             }
             System.out.println(temp);
@@ -119,6 +107,8 @@ public class PlayerAI implements Player {
          * Get Bomber's current position
          */
         Point curPosition = players[playerIndex].position;
+        int minScore = 100;
+        Move.Direction bestMove = new Move.Direction(0, 0, PlayerAction.STAYPUT, PlayerAction.PLACEBOMB);
 
         /**
          * Find which neighbours of Bomber's current position are currently unoccupied, so that I
@@ -131,8 +121,16 @@ public class PlayerAI implements Player {
             int y = curPosition.y + move.dy;
 
             if (map[x][y].isWalkable()) {
-                if (heightMap[x][y] < 9){
-                validMoves.add(move);
+                // TODO: hardcoded 14.
+                if (heightMap[x][y] < 14){
+                    if(minScore > heightMap[x][y]) {
+                        minScore = heightMap[x][y];
+                        bestMove = move;
+                    }
+                    validMoves.add(move);
+                    if(heightMap[curPosition.x][curPosition.y] == -3) {
+                        bombMove = true;
+                    }
                 }
             }
             if (allBlocks.contains(new Point(x, y))) {
@@ -144,10 +142,7 @@ public class PlayerAI implements Player {
          * If there are blocks around, I should place a bomb in my current square.
          */
         if (!blocks.isEmpty()) {
-            if (movesSequence.size() != 0)
-            {
             bombMove = true;
-            }
         }
 
         /**
@@ -162,40 +157,61 @@ public class PlayerAI implements Player {
          * If I've got moves stored in movesSequence, use the oldest one in there (index 0). 
          * Else pick the first validMove available lol
          */
-        Move.Direction move = validMoves.get((int) (Math.random() * validMoves.size()));
-        return move.action;
+        //Move.Direction move = validMoves.get((int) (Math.random() * validMoves.size()));
+        if (bombMove) {
+            return bestMove.bombaction;
+        }
+        System.out.println(bestMove.action); 
+        return bestMove.action;
 
     }
 
+    private void updateHeightMapBlocks(Point p) {
+        int x = p.x;
+        int y = p.y;
+        if(map[x-1][y].isWalkable()) {
+            heightMap[x-1][y] = BLOCK_V;
+        }
+        if(map[x][y-1].isWalkable()) {
+            heightMap[x][y-1] = BLOCK_V;
+        }
+        if(map[x+1][y].isWalkable()) {
+            heightMap[x+1][y] = BLOCK_V;
+        }
+        if(map[x][y+1].isWalkable()) {
+            heightMap[x][y+1] = BLOCK_V;
+        }
+    }
     private void updateHeightMapBombs(Point p, Bomb bomb) {
         int x = p.x;
         int y = p.y;
         // TODO: score for chaining
         int score = 15 - bomb.getTimeleft();
         System.out.println("score " + score); 
-
-        for(int i = 0; i < bomb.getRange(); i++) {
+        // Increase score of bomb coord. 
+        heightMap[x][y] = score;
+        for(int i = 1; i < bomb.getRange() + 1; i++) {
             if(map[x-i][y].isWalkable()) {
                 heightMap[x-i][y] = score;
             } else {
                 break;
             }
         }
-        for(int i = 0; i < bomb.getRange(); i++) {
+        for(int i = 1; i < bomb.getRange() + 1; i++) {
             if(map[x+i][y].isWalkable()) {
                 heightMap[x+i][y] = score;
             } else {
                 break;
             }
         }
-        for(int i = 0; i < bomb.getRange(); i++) {
+        for(int i = 1; i < bomb.getRange() + 1; i++) {
             if(map[x][y-i].isWalkable()) {
                 heightMap[x][y-i] = score;
             } else {
                 break;
             }
         }
-        for(int i = 0; i < bomb.getRange(); i++) {
+        for(int i = 1; i < bomb.getRange() + 1; i++) {
             if(map[x][y+i].isWalkable()) {
                 heightMap[x][y+i] = score;
             } else {
